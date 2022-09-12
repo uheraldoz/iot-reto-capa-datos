@@ -202,7 +202,7 @@ def get_or_create_role(name):
     except Role.DoesNotExist:
         role = Role(name=name)
         role.save()
-    return(role)
+    return (role)
 
 
 '''
@@ -217,7 +217,7 @@ def get_or_create_user(login):
         role = Role.objects.get(name="USER")
         user = User(login=login, role=role, )
         user.save()
-    return(user)
+    return (user)
 
 
 '''
@@ -239,7 +239,7 @@ def get_or_create_location(city, state, country):
         loc.lng = lng
         loc.save()
 
-    return(loc)
+    return (loc)
 
 
 '''
@@ -261,7 +261,7 @@ def get_or_create_location_only_city(city):
         loc.lng = lng
         loc.save()
 
-    return(loc)
+    return (loc)
 
 
 '''
@@ -272,7 +272,7 @@ Intenta traer la estación con usuario y locación {user, location}. Si no exist
 def get_or_create_station(user, location):
     station, created = Station.objects.get_or_create(
         user=user, location=location)
-    return(station)
+    return (station)
 
 
 '''
@@ -282,7 +282,7 @@ Traer la estación con usuario y locación {user, location}.
 
 def get_station(user, location):
     station = Station.objects.get(user=user, location=location)
-    return(station)
+    return (station)
 
 
 '''
@@ -293,7 +293,7 @@ Intenta traer la variable con nombre y unidad {name, unit}. Si no existe la crea
 def get_or_create_measurement(name, unit):
     measurement, created = Measurement.objects.get_or_create(
         name=name, unit=unit)
-    return(measurement)
+    return (measurement)
 
 
 '''
@@ -307,7 +307,7 @@ def create_data(value: float, station: Station, measure: Measurement):
     data.save()
     station.last_activity = data.time
     station.save()
-    return(data)
+    return (data)
 
 
 '''
@@ -320,7 +320,7 @@ Se usa para la importación de datos.
 def create_data_with_date(value: float, station: Station, measure: Measurement, date: datetime):
     data = Data(value=value, station=station, measurement=measure, time=date)
     data.save()
-    return(data)
+    return (data)
 
 
 '''
@@ -333,7 +333,7 @@ def get_last_measure(station, measurement):
         station=station, measurement=measurement).latest('time')
     print(last_measure.time)
     print(datetime.now())
-    return(last_measure.value)
+    return (last_measure.value)
 
 
 class LoginView(TemplateView):
@@ -584,6 +584,86 @@ def get_map_json(request, **kwargs):
     data_result["data"] = data
 
     return JsonResponse(data_result)
+
+
+def get_user_map_json(request, **kwargs):
+
+    userParam = kwargs.get("user", None)
+    measureParam = kwargs.get("measure", None)
+    selectedMeasure = None
+
+    try:
+        user = User.objects.get(login=userParam)
+    except:
+        raise Http404
+
+    measurements = Measurement.objects.all()
+    if measureParam != None:
+        selectedMeasure = Measurement.objects.filter(name=measureParam)[0]
+    elif measurements.count() > 0:
+        selectedMeasure = measurements[0]
+
+    locations = Location.objects.filter(station__user_id=userParam)
+    try:
+        start = datetime.fromtimestamp(
+            float(request.GET.get("from", None)) / 1000
+        )
+    except:
+        start = None
+    try:
+        end = datetime.fromtimestamp(
+            float(request.GET.get("to", None)) / 1000)
+    except:
+        end = None
+    if start == None and end == None:
+        start = datetime.now()
+        start = start - dateutil.relativedelta.relativedelta(weeks=1)
+        end = datetime.now()
+        end += dateutil.relativedelta.relativedelta(days=1)
+    elif end == None:
+        end = datetime.now()
+    elif start == None:
+        start = datetime.fromtimestamp(0)
+
+    data_result = _get_data_results(
+        locations, user, selectedMeasure, start, end)
+    return JsonResponse(data_result)
+
+
+def _get_data_results(locations, user, selectedMeasure, start, end):
+    data_result = {}
+    data = []
+    for location in locations:
+        stations = Station.objects.filter(location=location)
+        locationData = Data.objects.filter(
+            station__in=stations, measurement__name=selectedMeasure.name,  time__gte=start.date(), time__lte=end.date())
+        if locationData.count() <= 0:
+            continue
+        minVal = locationData.aggregate(
+            Min('value'))['value__min']
+        maxVal = locationData.aggregate(
+            Max('value'))['value__max']
+        avgVal = locationData.aggregate(
+            Avg('value'))['value__avg']
+        data.append({
+            'location_name': f'{location.city.name}, {location.state.name}, {location.country.name}',
+            'user': f'{user.first_name}, {user.last_name}',
+            'lat': location.lat,
+            'lng': location.lng,
+            'population': stations.count(),
+            'min': minVal if minVal != None else 0,
+            'max': maxVal if maxVal != None else 0,
+            'avg': round(avgVal if avgVal != None else 0, 2),
+        })
+
+    startFormatted = start.strftime("%d/%m/%Y") if start != None else " "
+    endFormatted = end.strftime("%d/%m/%Y") if end != None else " "
+
+    data_result["locations"] = [loc.str() for loc in locations]
+    data_result["start"] = startFormatted
+    data_result["end"] = endFormatted
+    data_result["data"] = data
+    return data_result
 
 
 def download_csv_data(request):
