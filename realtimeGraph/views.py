@@ -616,7 +616,8 @@ def _get_data_results(locations, user, selectedMeasure, start, end):
     end_ts = int(end.timestamp() * 1000000)
 
     for location in locations:
-        stations = Station.objects.filter(location=location)
+        stations = Station.objects.filter(
+            location=location, user_id=user.login)
         locationData = Data.objects.filter(
             station__in=stations, measurement__name=selectedMeasure.name, time__gte=start_ts, time__lte=end_ts,
         )
