@@ -634,7 +634,8 @@ def _get_data_results(locations, user, selectedMeasure, start, end):
     data_result = {}
     data = []
     for location in locations:
-        stations = Station.objects.filter(location=location)
+        stations = Station.objects.filter(
+            location=location, user_id=user.login)
         locationData = Data.objects.filter(
             station__in=stations, measurement__name=selectedMeasure.name,  time__gte=start.date(), time__lte=end.date())
         if locationData.count() <= 0:
